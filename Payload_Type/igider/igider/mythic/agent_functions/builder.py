@@ -221,6 +221,18 @@ class Igider(PayloadType):
     }}
     '''
         return powershell_loader
+    
+    def adjust_file_name(filename,output_format):
+        filename_pieces = filename.split(".")
+        original_filename = ".".join(filename_pieces[:-1])
+        if output_format == "exe_windows":
+            return original_filename + ".exe"
+        elif output_format == "elf_linux":
+            return original_filename + ".elf"
+        elif output_format == "powershell_reflective":
+            return original_filename + ".ps1"
+        else:
+            return filename
 
     async def _build_executable(self, code: str, target_os: str) -> bytes:
         """Build executable using PyInstaller."""
@@ -368,7 +380,7 @@ class Igider(PayloadType):
                     await self.update_build_step("Finalizing Payload", "Building Windows executable...")
                     executable_data = await self._build_executable(base_code, "windows")
                     resp.payload = executable_data
-                    resp.update_file_name = adjust_file_name(self.filename, output_format)
+                    resp.updated_filename = adjust_file_name(self.filename, output_format)
                     resp.build_message = "Successfully built Windows executable"
                 except Exception as e:
                     resp.set_status(BuildStatus.Error)
@@ -379,7 +391,7 @@ class Igider(PayloadType):
                     await self.update_build_step("Finalizing Payload", "Building Linux executable...")
                     executable_data = await self._build_executable(base_code, "linux")
                     resp.payload = executable_data
-                    resp.update_file_name = adjust_file_name(self.filename, output_format)
+                    resp.updated_filename = adjust_file_name(self.filename, output_format)
                     resp.build_message = "Successfully built Linux executable"
                 except Exception as e:
                     resp.set_status(BuildStatus.Error)
@@ -390,7 +402,7 @@ class Igider(PayloadType):
                     await self.update_build_step("Finalizing Payload", "Creating PowerShell reflective loader...")
                     ps_loader = self._create_powershell_loader(base_code)
                     resp.payload = ps_loader.encode()
-                    resp.update_file_name = adjust_file_name(self.filename, output_format)
+                    resp.updated_filename = adjust_file_name(self.filename, output_format)
                     resp.build_message = "Successfully built PowerShell reflective loader"
                 except Exception as e:
                     resp.set_status(BuildStatus.Error)
@@ -398,7 +410,6 @@ class Igider(PayloadType):
                     return resp
             else:  # default to py
                 resp.payload = base_code.encode()
-                resp.payload_type = "py"
                 resp.build_message = "Successfully built Python script payload"
             
             # Report any non-fatal errors
@@ -414,14 +425,4 @@ class Igider(PayloadType):
             
         return resp
     
-    def adjust_file_name(filename,output_format):
-        filename_pieces = filename.split(".")
-        original_filename = ".".join(filename_pieces[:-1])
-        if output_format == "exe_windows":
-            return original_filename + ".exe"
-        elif output_format == "elf_linux":
-            return original_filename + ".elf"
-        elif output_format == "powershell_reflective":
-            return original_filename + ".ps1"
-        else:
-            return filename
+    
