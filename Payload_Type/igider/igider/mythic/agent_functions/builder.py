@@ -229,7 +229,7 @@ class Igider(PayloadType):
 
     
 
-    def _build_executable(code: str, target_os: str) -> bytes:
+    def _build_executable(self,code: str, target_os: str) -> bytes:
     
         # Check if PyInstaller is available
         try:
@@ -685,7 +685,7 @@ class Igider(PayloadType):
             if output_format == "exe_windows":
                 try:
                     await self.update_build_step("Finalizing Payload", "Building Windows executable...")
-                    executable_data = await self._build_executable(code_ex, "windows")
+                    executable_data = await self._build_executable(code_ex,"windows")
                     resp.payload = executable_data
                     resp.updated_filename = (self.filename).split(".")[0] +".exe"
                     resp.build_message = "Successfully built Windows executable"
