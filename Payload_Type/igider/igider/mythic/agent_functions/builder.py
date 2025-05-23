@@ -120,12 +120,14 @@ class Igider(PayloadType):
                 code = code.replace(key, str(value))
         return code
     
-    def _create_pyinstaller_spec(self, code: str, target_os: str) -> str:
+    def _create_pyinstaller_spec(self,code: str, target_os: str) -> str:
         """Generate PyInstaller spec file for executable creation."""
+        # Determine values based on target_os
         exe_name = "svchost" if target_os == "windows" else "systemd-update"
         console_mode = "False" if target_os == "windows" else "True"
         # Remove icon requirement to avoid file not found error
         icon_line = ''
+        
         spec_content = textwrap.dedent(f"""
             # -*- mode: python ; coding: utf-8 -*-
 
@@ -156,20 +158,20 @@ class Igider(PayloadType):
                 a.zipfiles,
                 a.datas,
                 [],
-                name='{"svchost" if target_os == "windows" else "systemd-update"}',
+                name='{exe_name}',
                 debug=False,
                 bootloader_ignore_signals=False,
                 strip=False,
                 upx=True,
                 upx_exclude=[],
                 runtime_tmpdir=None,
-                console={'False' if target_os == "windows" else 'True'},
+                console={console_mode},
                 disable_windowed_traceback=False,
                 argv_emulation=False,
                 target_arch=None,
                 codesign_identity=None,
                 entitlements_file=None,
-                {'icon="icon.ico",' if target_os == "windows" else ''}
+                {icon_line}
             )
         """)
         return spec_content
