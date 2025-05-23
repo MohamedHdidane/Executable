@@ -36,7 +36,7 @@ class Igider(PayloadType):
             parameter_type=BuildParameterType.ChooseOne,
             description="How the final payload should be structured for execution",
             choices=["py","exe_windows", "elf_linux", "powershell_reflective"],
-            default_value=""
+            default_value="py"
         ),
         BuildParameter(
             name="https_check",
@@ -368,7 +368,6 @@ class Igider(PayloadType):
                     await self.update_build_step("Finalizing Payload", "Building Windows executable...")
                     executable_data = await self._build_executable(base_code, "windows")
                     resp.payload = executable_data
-                    resp.payload_type = "exe"
                     resp.file_extension = "exe"
                     resp.build_message = "Successfully built Windows executable"
                 except Exception as e:
@@ -392,7 +391,6 @@ class Igider(PayloadType):
                     await self.update_build_step("Finalizing Payload", "Creating PowerShell reflective loader...")
                     ps_loader = self._create_powershell_loader(base_code)
                     resp.payload = ps_loader.encode()
-                    resp.payload_type = "ps1"
                     resp.file_extension = "ps1"
                     resp.build_message = "Successfully built PowerShell reflective loader"
                 except Exception as e:
@@ -402,7 +400,6 @@ class Igider(PayloadType):
             else:  # default to py
                 resp.payload = base_code.encode()
                 resp.payload_type = "py"
-                resp.file_extension = "py"
                 resp.build_message = "Successfully built Python script payload"
             
             # Report any non-fatal errors
