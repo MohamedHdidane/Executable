@@ -397,7 +397,7 @@ class Igider(PayloadType):
                     resp.build_message = "Successfully built Linux executable"
                 except Exception as e:
                     resp.set_status(BuildStatus.Error)
-                    resp.build_stderr = f"Failed to build Linux executable: {str(e)}"
+                    resp.build_stderr = f"Failed to build Linux executable: {str(e)} * {self.filename} * {output_format}"
                     return resp
             elif output_format == "powershell_reflective":
                 try:
