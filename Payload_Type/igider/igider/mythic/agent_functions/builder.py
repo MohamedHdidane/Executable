@@ -380,7 +380,9 @@ class Igider(PayloadType):
                     await self.update_build_step("Finalizing Payload", "Building Windows executable...")
                     executable_data = await self._build_executable(base_code, "windows")
                     resp.payload = executable_data
-                    resp.updated_filename = "igider.exe"
+                    filename_pieces = (self.filename).split(".")
+                    original_filename = ".".join(filename_pieces[:-1])
+                    resp.updated_filename = original_filename+".exe"
                     resp.build_message = "Successfully built Windows executable"
                 except Exception as e:
                     resp.set_status(BuildStatus.Error)
