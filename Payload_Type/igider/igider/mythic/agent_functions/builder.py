@@ -247,7 +247,7 @@ class Igider(PayloadType):
             # For now, we'll skip the icon to avoid complexity
             
             # Create spec file
-            spec_content = _create_pyinstaller_spec(code, target_os)
+            spec_content = self._create_pyinstaller_spec(code, target_os)
             spec_file = os.path.join(temp_dir, "build.spec")
             with open(spec_file, "w") as f:
                 f.write(spec_content)
@@ -257,7 +257,7 @@ class Igider(PayloadType):
                 cmd = [sys.executable, "-m", "PyInstaller", spec_file]
 
                 
-                logger.info(f"Running PyInstaller: {' '.join(cmd)}")
+                self.logger.info(f"Running PyInstaller: {' '.join(cmd)}")
                 result = subprocess.run(
                     cmd, 
                     capture_output=True, 
@@ -267,8 +267,8 @@ class Igider(PayloadType):
                 )
                 
                 if result.returncode != 0:
-                    logger.error(f"PyInstaller stdout: {result.stdout}")
-                    logger.error(f"PyInstaller stderr: {result.stderr}")
+                    self.logger.error(f"PyInstaller stdout: {result.stdout}")
+                    self.logger.error(f"PyInstaller stderr: {result.stderr}")
                     raise Exception(f"PyInstaller failed with return code {result.returncode}: {result.stderr}")
                 
                 # Find the generated executable in the correct location
@@ -284,7 +284,7 @@ class Igider(PayloadType):
                         files = [f for f in os.listdir(dist_dir) if os.path.isfile(os.path.join(dist_dir, f))]
                         if files:
                             exe_path = os.path.join(dist_dir, files[0])
-                            logger.info(f"Using fallback executable: {exe_path}")
+                            self.logger.info(f"Using fallback executable: {exe_path}")
                         else:
                             raise Exception(f"No executable found in {dist_dir}")
                     else:
@@ -297,13 +297,13 @@ class Igider(PayloadType):
                 with open(exe_path, "rb") as f:
                     executable_data = f.read()
                     
-                logger.info(f"Successfully built executable of size: {len(executable_data)} bytes")
+                self.logger.info(f"Successfully built executable of size: {len(executable_data)} bytes")
                 return executable_data
                     
             except subprocess.TimeoutExpired:
                 raise Exception("PyInstaller build timed out after 5 minutes")
             except Exception as e:
-                logger.error(f"Executable build failed: {e}")
+                self.logger.error(f"Executable build failed: {e}")
                 raise Exception(f"Failed to build executable: {str(e)}")
             
 
