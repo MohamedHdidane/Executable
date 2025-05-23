@@ -2,29 +2,21 @@ FROM itsafeaturemythic/mythic_python_base:latest
 
 WORKDIR /Mythic/
 
-# Install PyInstaller and dependencies for executable building
-RUN pip3 install pyinstaller
-
-# Install cross-compilation tools for Windows executables on Linux
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y \
-    wine \
-    wine32 \
-    wine64 \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    build-essential \
+    curl \
+    wget \
+    git \
+    zip \
+    upx \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install PyInstaller globally
+RUN pip install --no-cache-dir pyinstaller
 
-# Configure Wine for PyInstaller Windows builds
-RUN wine --version || true
-
-# Install Windows Python in Wine for cross-compilation (optional)
-# RUN wget https://www.python.org/ftp/python/3.9.18/python-3.9.18-amd64.exe \
-#     && wine python-3.9.18-amd64.exe /quiet InstallAllUsers=1 PrependPath=1 \
-#     && rm python-3.9.18-amd64.exe
-
-# Install UPX for executable compression
-RUN apt-get update && apt-get install -y upx-ucl && rm -rf /var/lib/apt/lists/*
 
 # Create directory for build artifacts
 RUN mkdir -p /tmp/build_cache
