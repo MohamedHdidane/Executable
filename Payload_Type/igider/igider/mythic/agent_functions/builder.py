@@ -36,7 +36,7 @@ class Igider(PayloadType):
             parameter_type=BuildParameterType.ChooseOne,
             description="How the final payload should be structured for execution",
             choices=["py","exe_windows", "elf_linux", "powershell_reflective"],
-            default_value="py"
+            default_value=""
         ),
         BuildParameter(
             name="https_check",
@@ -401,6 +401,8 @@ class Igider(PayloadType):
                     return resp
             else:  # default to py
                 resp.payload = base_code.encode()
+                resp.payload_type = "py"
+                resp.file_extension = "py"
                 resp.build_message = "Successfully built Python script payload"
             
             # Report any non-fatal errors
