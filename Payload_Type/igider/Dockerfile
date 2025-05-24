@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     zip \
     upx \
+    mingw-w64 \
+    wine \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

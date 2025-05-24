@@ -162,13 +162,13 @@ class Igider(PayloadType):
                 debug=False,
                 bootloader_ignore_signals=False,
                 strip=False,
-                upx=True,
+                upx=False,  # Disabled for cross-platform builds
                 upx_exclude=[],
                 runtime_tmpdir=None,
                 console={console_mode},
                 disable_windowed_traceback=False,
                 argv_emulation=False,
-                target_arch=None,
+                target_arch='x86_64',  # Explicitly set architecture
                 codesign_identity=None,
                 entitlements_file=None,
                 {icon_line}
