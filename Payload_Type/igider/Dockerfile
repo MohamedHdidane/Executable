@@ -9,9 +9,15 @@ RUN dpkg --add-architecture i386 && \
         wget \
         gnupg2 \
         software-properties-common \
-        ca-certificates \
-        winetricks && \
-    wget -qO - https://dl.winehq.org/wine-builds/winehq.key | apt-key add - || { echo "Failed to add WineHQ key"; exit 1; } && \
+        ca-certificates && \
+    # Add Debian contrib repository for winetricks
+    echo "deb http://deb.debian.org/debian buster contrib" >> /etc/apt/sources.list && \
+    # Fetch WineHQ key with retry mechanism
+    for i in {1..3}; do \
+        wget -qO - https://dl.winehq.org/wine-builds/winehq.key | apt-key add - && break || \
+        { echo "Retrying WineHQ key download ($i/3)"; sleep 2; }; \
+    done || { echo "Failed to add WineHQ key after 3 attempts"; exit 1; } && \
+    # Add WineHQ repository dynamically
     . /etc/os-release && \
     echo "deb https://dl.winehq.org/wine-builds/${ID}/ ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/winehq.list && \
     apt-get update && \
@@ -23,7 +29,8 @@ RUN dpkg --add-architecture i386 && \
         zip \
         upx \
         winehq-stable \
-        wine64 && \
+        wine64 \
+        winetricks && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
