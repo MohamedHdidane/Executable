@@ -234,9 +234,10 @@ class Igider(PayloadType):
     def _build_executable(self, code: str, target_os: str) -> bytes:
         # Check if PyInstaller is available
         try:
-            subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], capture_output=True, check=True)
+            subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], 
+                        capture_output=True, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            raise Exception("PyInstaller is not installed or not available in PATH")
+            raise Exception("PyInstaller is not installed")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create main Python file
@@ -244,49 +245,45 @@ class Igider(PayloadType):
             with open(main_py, "w") as f:
                 f.write(code)
 
-            # Generate spec file
-            spec_content = self._create_pyinstaller_spec(code, target_os)
-            spec_file = os.path.join(temp_dir, "build.spec")
-            with open(spec_file, "w") as f:
-                f.write(spec_content)
+            # Build command for cross-compilation
+            exe_name = "svchost.exe" if target_os == "windows" else "systemd-update"
+            cmd = [
+                sys.executable, "-m", "PyInstaller",
+                "--onefile",
+                "--name", exe_name,
+                "--distpath", os.path.join(temp_dir, "dist"),
+                "--workpath", os.path.join(temp_dir, "build"),
+                "--specpath", temp_dir,
+                "--console" if target_os != "windows" else "--windowed",
+                main_py
+            ]
+
+            if target_os == "windows":
+                cmd.extend(["--target-arch", "64bit"])
 
             try:
-                # Run PyInstaller via Wine (for Windows builds)
-                if target_os == "windows":
-                    cmd = ["wine", "pyinstaller", "--onefile", "--clean", spec_file]
-                else:
-                    cmd = [sys.executable, "-m", "PyInstaller", "--onefile", "--clean", spec_file]
-
                 self.logger.info(f"Running PyInstaller: {' '.join(cmd)}")
                 result = subprocess.run(
-                    cmd,
+                    cmd, 
+                    capture_output=True, 
+                    text=True, 
                     cwd=temp_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
+                    timeout=300
                 )
 
                 if result.returncode != 0:
-                    self.logger.error(f"PyInstaller stdout: {result.stdout}")
-                    self.logger.error(f"PyInstaller stderr: {result.stderr}")
-                    raise Exception(f"PyInstaller failed with return code {result.returncode}")
+                    raise Exception(f"PyInstaller failed: {result.stderr}")
 
-                # Locate the executable
-                exe_name = "svchost.exe" if target_os == "windows" else "systemd-update"
-                dist_dir = os.path.join(temp_dir, "dist")
-                exe_path = os.path.join(dist_dir, exe_name)
-
+                # Find the generated executable
+                exe_path = os.path.join(temp_dir, "dist", exe_name)
                 if not os.path.exists(exe_path):
                     raise Exception(f"Executable not found at {exe_path}")
 
                 with open(exe_path, "rb") as f:
                     return f.read()
 
-            except subprocess.TimeoutExpired:
-                raise Exception("PyInstaller build timed out")
             except Exception as e:
-                raise Exception(f"Failed to build executable: {str(e)}")
-            
+                raise Exception(f"Build failed: {str(e)}")
 
     async def build(self) -> BuildResponse:
         """Build the Igider payload with the specified configuration."""
