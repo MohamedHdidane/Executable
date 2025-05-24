@@ -22,9 +22,9 @@ RUN dpkg --add-architecture i386 && \
 
 # Configure Wine (non-interactive, headless mode)
 ENV WINEARCH=win64
-ENV WINEDEBUG=-all  # Disable Wine debug logs
+ENV WINEDEBUG=-all  
 ENV WINEPREFIX=/root/.wine
-ENV DISPLAY=:0  # Dummy value to suppress GUI errors
+ENV DISPLAY=:0 
 
 # Install Python for Windows silently via winetricks
 RUN wineboot --init && \
