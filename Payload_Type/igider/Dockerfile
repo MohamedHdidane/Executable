@@ -1,7 +1,6 @@
 # Stage 1: Linux executable build
 FROM ubuntu:20.04 AS linux-build
 
-RUN pip install mythic-container
 
 WORKDIR /Mythic/
 
@@ -11,6 +10,8 @@ RUN apt-get update && apt-get install -y gnupg ca-certificates && \
     pip3 install pyinstaller && \
     rm -rf /var/lib/apt/lists/*
 RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 3B4FE6ACC0B21F32
+
+RUN pip install mythic-container
 
 # Copy source code
 COPY . /Mythic/
