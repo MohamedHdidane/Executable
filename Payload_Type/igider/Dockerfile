@@ -4,8 +4,8 @@ FROM ubuntu:22.04 AS linux-build
 WORKDIR /Mythic/
 
 # Install Python and PyInstaller
-RUN apt-get update && \
-    apt-get install -y python3 python3-pip upx-ucl && \
+RUN apt-get update --allow-insecure-repositories && \
+    apt-get install -y --allow-unauthenticated ca-certificates && \
     pip3 install pyinstaller && \
     rm -rf /var/lib/apt/lists/*
 
