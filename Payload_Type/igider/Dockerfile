@@ -2,15 +2,19 @@ FROM itsafeaturemythic/mythic_python_base:latest
 
 WORKDIR /Mythic/
 
-# Add WineHQ repository and install Wine
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    gnupg2 \
-    software-properties-common \
-    && wget -qO - https://dl.winehq.org/wine-builds/winehq.key | apt-key add - \
-    && apt-add-repository 'deb https://dl.winehq.org/wine-builds/debian/ bullseye main' \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+# Install system dependencies and Wine
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        wget \
+        gnupg2 \
+        software-properties-common \
+        ca-certificates && \
+    wget -qO - https://dl.winehq.org/wine-builds/winehq.key | apt-key add - || { echo "Failed to add WineHQ key"; exit 1; } && \
+    . /etc/os-release && \
+    echo "deb https://dl.winehq.org/wine-builds/${ID}/ ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/winehq.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
         gcc \
         build-essential \
         curl \
@@ -18,11 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zip \
         upx \
         winehq-stable \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+        wine64 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Initialize Wine
-RUN wine64 wineboot --init
+RUN wine64 wineboot --init || { echo "Wine initialization failed"; exit 1; }
 
 # Install PyInstaller globally
 RUN pip install --no-cache-dir pyinstaller==5.13.0
