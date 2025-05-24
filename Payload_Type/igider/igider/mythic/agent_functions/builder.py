@@ -239,7 +239,7 @@ class Igider(PayloadType):
                 f.write(code)
 
             # PyInstaller command for Windows EXE
-            cmd = ["wine", sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", spec_file] if target_os == "windows" else [sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", spec_file]
+            cmd = ["wine", sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", main_py] if target_os == "windows" else [sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", main_py]
             # Run PyInstaller
             try:
                 subprocess.run(cmd, check=True, cwd=temp_dir, timeout=300)
