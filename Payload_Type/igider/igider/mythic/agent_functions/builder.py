@@ -232,19 +232,28 @@ class Igider(PayloadType):
     
 
     def _build_executable(self, code: str, target_os: str) -> bytes:
-        # Check if PyInstaller and Wine are available
+        # Check host PyInstaller
         try:
             result = subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], capture_output=True, check=True, text=True)
-            self.logger.info(f"PyInstaller version: {result.stdout.strip()}")
+            self.logger.info(f"Host PyInstaller version: {result.stdout.strip()}")
         except (subprocess.CalledProcessError, FileNotFoundError):
-            raise Exception("PyInstaller is not installed or not available in PATH")
+            raise Exception("PyInstaller is not installed on host or not available in PATH")
 
+        # Check Wine and Wine Python
         if target_os == "windows":
             try:
                 result = subprocess.run(["wine64", "--version"], capture_output=True, check=True, text=True)
                 self.logger.info(f"Wine version: {result.stdout.strip()}")
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                raise Exception("Wine64 is not installed or not available in PATH")
+                # Install Python and PyInstaller in Wine if not present
+                result = subprocess.run(["wine", "python3", "--version"], capture_output=True, text=True, check=False)
+                if result.returncode != 0:
+                    self.logger.info("Installing Python in Wine...")
+                    subprocess.run(["wine", "msiexec", "/i", "/opt/python-3.9.10-amd64.exe", "/quiet"], check=True)
+                    subprocess.run(["wine", "pip", "install", "--no-cache-dir", "pyinstaller==5.13.0"], check=True)
+                result = subprocess.run(["wine", "python3", "-m", "PyInstaller", "--version"], capture_output=True, check=True, text=True)
+                self.logger.info(f"Wine PyInstaller version: {result.stdout.strip()}")
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                raise Exception(f"Wine setup failed: {str(e)}")
 
         with tempfile.TemporaryDirectory(dir="/tmp") as temp_dir:
             # Ensure directory permissions
@@ -274,13 +283,14 @@ class Igider(PayloadType):
                 ).stdout.strip()
                 self.logger.info(f"Wine temp dir: {wine_temp_dir}")
 
-                # Run PyInstaller with Wine for Windows builds
+                # Run PyInstaller
                 cmd = [
-                    "wine", sys.executable, "-m", "PyInstaller",
+                    "wine", "python3", "-m", "PyInstaller",
                     "--log-level=DEBUG",
                     f"--distpath={os.path.join(temp_dir, 'dist')}",
                     f"--workpath={os.path.join(temp_dir, 'build')}",
-                    "--clean",  # Clean PyInstaller cache
+                    "--clean",
+                    "--noconfirm",
                     spec_file
                 ] if target_os == "windows" else [
                     sys.executable, "-m", "PyInstaller",
@@ -288,20 +298,21 @@ class Igider(PayloadType):
                     f"--distpath={os.path.join(temp_dir, 'dist')}",
                     f"--workpath={os.path.join(temp_dir, 'build')}",
                     "--clean",
+                    "--noconfirm",
                     spec_file
                 ]
                 self.logger.info(f"Running command: {' '.join(cmd)}")
                 self.logger.info(f"Working directory: {temp_dir}")
 
-                # Run PyInstaller with enhanced output capture
+                # Run with detailed Wine debugging
                 env = os.environ.copy()
-                env["WINEDEBUG"] = "err+all"  # Enable Wine debug output
+                env["WINEDEBUG"] = "err+all,fixme+all"
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     cwd=temp_dir,
-                    timeout=300,
+                    timeout=600,  # Increased timeout
                     env=env
                 )
 
@@ -316,14 +327,14 @@ class Igider(PayloadType):
                 dist_dir = os.path.join(temp_dir, "dist")
                 exe_path = os.path.join(dist_dir, exe_name)
 
-                # Check Wine's filesystem for the executable
+                # Check Wine's filesystem
                 wine_dist_dir = os.path.join(os.environ.get("WINEPREFIX", "/root/.wine"), "drive_c", "users", "root", "Temp", os.path.basename(temp_dir), "dist")
                 wine_exe_path = os.path.join(wine_dist_dir, exe_name)
 
                 self.logger.info(f"Checking for executable at: {exe_path}")
                 self.logger.info(f"Checking Wine path: {wine_exe_path}")
 
-                # List directory contents for debugging
+                # List directory contents
                 if os.path.exists(dist_dir):
                     self.logger.info(f"Contents of native dist dir: {os.listdir(dist_dir)}")
                 else:
@@ -333,25 +344,16 @@ class Igider(PayloadType):
                 else:
                     self.logger.info(f"Wine dist dir does not exist: {wine_dist_dir}")
 
-                # Search entire Wine Temp directory
-                wine_temp_base = os.path.join(os.environ.get("WINEPREFIX", "/root/.wine"), "drive_c", "users", "root", "Temp")
-                if os.path.exists(wine_temp_base):
-                    self.logger.info(f"Contents of Wine Temp dir: {os.listdir(wine_temp_base)}")
-                    # Search for the executable
-                    found_files = []
-                    for root, _, files in os.walk(wine_temp_base):
-                        if exe_name in files:
-                            found_files.append(os.path.join(root, exe_name))
-                    if found_files:
-                        self.logger.info(f"Found executables: {found_files}")
-                        exe_path = found_files[0]  # Use the first found executable
-                    else:
-                        self.logger.info(f"No executable found in Wine Temp dir")
-                else:
-                    self.logger.info(f"Wine Temp dir does not exist: {wine_temp_base}")
-
-                # Try native path first
-                if os.path.exists(exe_path):
+                # Search entire Wine filesystem
+                wine_base = os.path.join(os.environ.get("WINEPREFIX", "/root/.wine"), "drive_c")
+                found_files = []
+                for root, _, files in os.walk(wine_base):
+                    if exe_name in files:
+                        found_files.append(os.path.join(root, exe_name))
+                if found_files:
+                    self.logger.info(f"Found executables in Wine filesystem: {found_files}")
+                    exe_path = found_files[0]
+                elif os.path.exists(exe_path):
                     self.logger.info(f"Found executable at: {exe_path}")
                 elif os.path.exists(wine_exe_path):
                     self.logger.info(f"Found executable in Wine path: {wine_exe_path}")
@@ -366,7 +368,7 @@ class Igider(PayloadType):
                 return executable_data
 
             except subprocess.TimeoutExpired:
-                raise Exception("PyInstaller build timed out after 5 minutes")
+                raise Exception("PyInstaller build timed out after 10 minutes")
             except Exception as e:
                 self.logger.error(f"Executable build failed: {str(e)}")
                 raise Exception(f"Failed to build executable: {str(e)}")

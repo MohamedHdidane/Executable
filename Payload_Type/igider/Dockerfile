@@ -26,16 +26,19 @@ RUN dpkg --add-architecture i386 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Download Python installer for Wine
+RUN wget -O /opt/python-3.9.10-amd64.exe https://www.python.org/ftp/python/3.9.10/python-3.9.10-amd64.exe
+
 # Initialize Wine
 RUN wine64 wineboot --init || { echo "Wine initialization failed"; exit 1; }
 
-# Install PyInstaller globally
+# Install PyInstaller globally on host
 RUN pip install --no-cache-dir pyinstaller==5.13.0
 
 # Create directory for build artifacts
 RUN mkdir -p /tmp/build_cache
 
-# Set environment variables for PyInstaller and Wine
+# Set environment variables
 ENV PYINSTALLER_CACHE_DIR=/tmp/build_cache
 ENV WINEARCH=win64
 ENV WINEPREFIX=/root/.wine
