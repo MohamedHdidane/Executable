@@ -1,57 +1,60 @@
-FROM itsafeaturemythic/mythic_python_base:latest
+# Stage 1: Linux executable build
+FROM ubuntu:20.04 AS linux-build
 
 WORKDIR /Mythic/
 
-# Install system dependencies, Wine, and winetricks
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        wget \
-        gnupg2 \
-        software-properties-common \
-        ca-certificates && \
-    # Add Debian contrib repository for winetricks
-    echo "deb http://deb.debian.org/debian buster contrib" >> /etc/apt/sources.list && \
-    # Fetch WineHQ key with retry mechanism
-    for i in {1..3}; do \
-        wget -qO - https://dl.winehq.org/wine-builds/winehq.key | apt-key add - && break || \
-        { echo "Retrying WineHQ key download ($i/3)"; sleep 2; }; \
-    done || { echo "Failed to add WineHQ key after 3 attempts"; exit 1; } && \
-    # Add WineHQ repository dynamically
-    . /etc/os-release && \
-    echo "deb https://dl.winehq.org/wine-builds/${ID}/ ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/winehq.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        gcc \
-        build-essential \
-        curl \
-        git \
-        zip \
-        upx \
-        winehq-stable \
-        wine64 \
-        winetricks && \
-    apt-get clean && \
+# Install Python and PyInstaller
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip upx-ucl && \
+    pip3 install pyinstaller && \
     rm -rf /var/lib/apt/lists/*
 
-# Download Python installer for Wine
-RUN wget -O /opt/python-3.9.10-amd64.exe https://www.python.org/ftp/python/3.9.10/python-3.9.10-amd64.exe && \
-    chmod +x /opt/python-3.9.10-amd64.exe && \
-    ls -l /opt/python-3.9.10-amd64.exe
-
-# Initialize Wine and install Windows components
-RUN wine64 wineboot --init || { echo "Wine initialization failed"; exit 1; } && \
-    winetricks -q vcrun2019
-
-# Install PyInstaller globally on host
-RUN pip install --no-cache-dir pyinstaller==5.13.0
+# Copy source code
+COPY . /Mythic/
 
 # Create directory for build artifacts
 RUN mkdir -p /tmp/build_cache
-
-# Set environment variables
 ENV PYINSTALLER_CACHE_DIR=/tmp/build_cache
-ENV WINEARCH=win64
+
+# Run PyInstaller to build Linux executable
+RUN python3 main.py --target-os linux
+
+# Stage 2: Windows executable build (using Wine)
+FROM ubuntu:20.04 AS windows-build
+
+WORKDIR /Mythic/
+
+# Install Wine, Python, and PyInstaller
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y wine wine32 wine64 python3 python3-pip upx-ucl && \
+    wine python3 -m pip install pyinstaller && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configure Wine
+RUN wine --version || true
 ENV WINEPREFIX=/root/.wine
 
-CMD ["python3", "main.py"]
+# Copy source code
+COPY . /Mythic/
+
+# Create directory for build artifacts
+RUN mkdir -p /tmp/build_cache
+ENV PYINSTALLER_CACHE_DIR=/tmp/build_cache
+
+# Run PyInstaller to build Windows executable
+RUN wine python3 main.py --target-os windows
+
+# Stage 3: Collect artifacts
+FROM ubuntu:20.04 AS final
+
+WORKDIR /artifacts/
+
+# Copy Linux executable
+COPY --from=linux-build /Mythic/dist/systemd-update /artifacts/systemd-update
+
+# Copy Windows executable
+COPY --from=windows-build /Mythic/dist/svchost.exe /artifacts/svchost.exe
+
+# Keep container running for artifact retrieval
+CMD ["bash", "-c", "ls -l /artifacts/ && sleep infinity"]
