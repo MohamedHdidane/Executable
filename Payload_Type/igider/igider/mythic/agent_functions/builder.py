@@ -374,7 +374,7 @@ class Igider(PayloadType):
             elif output_format == "elf_linux":
                 try:
                     await self.update_build_step("Finalizing Payload", "Building Linux executable...")
-                    executable_data = await self._build_executable(base_code, "linux")
+                    executable_data = self._build_executable(base_code, "linux")
                     resp.payload = executable_data
                     resp.updated_filename = (self.filename).split(".")[0] +".elf"
                     resp.build_message = "Successfully built Linux executable"
