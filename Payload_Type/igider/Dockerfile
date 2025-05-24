@@ -2,16 +2,22 @@ FROM itsafeaturemythic/mythic_python_base:latest
 
 WORKDIR /Mythic/
 
-# Install system dependencies
+# Add WineHQ repository and install Wine
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    build-essential \
-    curl \
     wget \
-    git \
-    zip \
-    upx \
-    wine64 \
+    gnupg2 \
+    software-properties-common \
+    && wget -qO - https://dl.winehq.org/wine-builds/winehq.key | apt-key add - \
+    && apt-add-repository 'deb https://dl.winehq.org/wine-builds/debian/ bullseye main' \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        build-essential \
+        curl \
+        git \
+        zip \
+        upx \
+        winehq-stable \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
