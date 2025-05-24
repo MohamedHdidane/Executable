@@ -1,20 +1,24 @@
 # Stage 1: Linux executable build
 FROM ubuntu:20.04 AS linux-build
 
-
 WORKDIR /Mythic/
 
-# Install Python and PyInstaller
-RUN apt-get update && apt-get install -y gnupg ca-certificates && \
-    apt-get install -y python3 python3-pip upx-ucl && \
+# Fix GPG signature issues first
+RUN apt-get update && apt-get install -y gnupg ca-certificates
+
+# Refresh Ubuntu archive key
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 3B4FE6ACC0B21F32
+
+# Now update and install everything else
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip upx-ucl && \
     pip3 install pyinstaller && \
     rm -rf /var/lib/apt/lists/*
-RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 3B4FE6ACC0B21F32
 
 RUN pip install mythic-container
 
-# Copy source code
 COPY . /Mythic/
+
 
 # Create directory for build artifacts
 RUN mkdir -p /tmp/build_cache
