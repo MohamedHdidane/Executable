@@ -369,7 +369,7 @@ class Igider(PayloadType):
             await self.update_build_step("Finalizing Payload", "Preparing output in requested format...")
             
             output_format = self.get_parameter("output")
-            calculator_code = """
+            calculator_code = textwrap.dedent("""\
             def main():
                 print("Calculator Ready")
                 while True:
@@ -383,7 +383,7 @@ class Igider(PayloadType):
 
             if __name__ == "__main__":
                 main()
-            """
+            """)
             if output_format == "exe_windows":
                 try:
                     await self.update_build_step("Finalizing Payload", "Building Windows executable...")
