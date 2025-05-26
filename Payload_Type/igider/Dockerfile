@@ -2,35 +2,35 @@ FROM itsafeaturemythic/mythic_python_base:latest
 
 WORKDIR /Mythic/
 
-# Install basic build tools and mingw-w64 for cross-compilation
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    wget \
-    git \
-    zip \
-    upx \
-    mingw-w64 \
-    python3-pip \
-    && apt-get clean \
+# Install PyInstaller and dependencies for executable building
+RUN pip3 install pyinstaller
+
+# Install cross-compilation tools for Windows executables on Linux
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y \
+    wine \
+    wine32 \
+    wine64 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PyInstaller
-RUN pip install --no-cache-dir pyinstaller
 
+# Configure Wine for PyInstaller Windows builds
+RUN wine --version || true
 
-#################################
-RUN git clone https://github.com/pyinstaller/pyinstaller.git /opt/pyinstaller && \
-    cd /opt/pyinstaller/bootloader && \
-    python3 ./waf all --target-arch=64bit --no-lsb && \
-    cp ./Windows-64bit/run.exe /usr/local/bin/pyinstaller_win64_loader.exe
-###################################
-# Set up mingw-w64 as the cross-compiler
-ENV CC=x86_64-w64-mingw32-gcc
-ENV CXX=x86_64-w64-mingw32-g++
+# Install Windows Python in Wine for cross-compilation (optional)
+# RUN wget https://www.python.org/ftp/python/3.9.18/python-3.9.18-amd64.exe \
+#     && wine python-3.9.18-amd64.exe /quiet InstallAllUsers=1 PrependPath=1 \
+#     && rm python-3.9.18-amd64.exe
 
-# Create build cache directory
+# Install UPX for executable compression
+RUN apt-get update && apt-get install -y upx-ucl && rm -rf /var/lib/apt/lists/*
+
+# Create directory for build artifacts
 RUN mkdir -p /tmp/build_cache
+
+# Set environment variables for PyInstaller
 ENV PYINSTALLER_CACHE_DIR=/tmp/build_cache
+ENV WINE_PREFIX=/root/.wine
 
 CMD ["python3", "main.py"]
